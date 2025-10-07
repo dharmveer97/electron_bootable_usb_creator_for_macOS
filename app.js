@@ -366,7 +366,7 @@ async function makeBootable() {
         const mountResult = await execAsync(`hdiutil mount "${selectedISO}"`);
         const mountPoint = mountResult.stdout.match(/\/Volumes\/[^\s]+/)[0];
 
-        // Copy files
+        // Copy files with real-time progress
         progressText.textContent = 'Copying Windows files (5-10 minutes)...';
         progressBar.style.width = '30%';
 
@@ -377,18 +377,108 @@ async function makeBootable() {
         // Use spawn for better progress handling
         const { spawn } = require('child_process');
 
+        // Show USB space monitor and file copy info
+        document.getElementById('usbSpaceMonitor').classList.remove('hidden');
+        document.getElementById('fileCopyInfo').classList.remove('hidden');
+
+        // Start monitoring USB space in parallel
+        let spaceMonitor = setInterval(async () => {
+            try {
+                const spaceInfo = await execAsync(`df -h "${targetPath}"`);
+                const lines = spaceInfo.stdout.split('\n');
+                if (lines.length > 1) {
+                    const parts = lines[1].split(/\s+/);
+                    const total = parts[1];
+                    const used = parts[2];
+                    const available = parts[3];
+                    const percentRaw = parts[4].replace('%', '');
+                    const percent = parseInt(percentRaw);
+
+                    // Update UI elements
+                    document.getElementById('usbSpaceText').textContent = `${percent}% Full`;
+                    document.getElementById('usbSpaceBar').style.width = `${percent}%`;
+                    document.getElementById('usbUsedSpace').textContent = `Used: ${used}`;
+                    document.getElementById('usbTotalSpace').textContent = `Total: ${total}`;
+
+                    // Change color based on usage
+                    const spaceBar = document.getElementById('usbSpaceBar');
+                    if (percent > 80) {
+                        spaceBar.className = 'bg-gradient-to-r from-red-500 to-orange-500 h-full transition-all duration-500';
+                    } else if (percent > 50) {
+                        spaceBar.className = 'bg-gradient-to-r from-yellow-500 to-green-500 h-full transition-all duration-500';
+                    } else {
+                        spaceBar.className = 'bg-gradient-to-r from-green-500 to-blue-500 h-full transition-all duration-500';
+                    }
+
+                    console.log(`💾 USB Space: ${used} used, ${available} available (${percent}%)`);
+                }
+            } catch (e) {
+                // Ignore errors during monitoring
+            }
+        }, 2000); // Update every 2 seconds
+
         await new Promise((resolve, reject) => {
             const rsyncProcess = spawn('rsync', [
-                '-av',
+                '-avh',
                 '--progress',
                 `${sourcePath}/`,
                 `${targetPath}/`
             ]);
 
             let errorOutput = '';
+            let lastFile = '';
+            let fileCount = 0;
+            let currentFile = '';
+            let totalFiles = 0;
 
             rsyncProcess.stdout.on('data', (data) => {
-                console.log(data.toString());
+                const output = data.toString();
+                console.log(output);
+
+                // Extract current file being copied (lines that don't start with special chars)
+                const lines = output.split('\n');
+                for (const line of lines) {
+                    const trimmed = line.trim();
+
+                    // Check for file transfer lines (they start with the filename)
+                    if (trimmed &&
+                        !trimmed.startsWith('sending') &&
+                        !trimmed.startsWith('total size') &&
+                        !trimmed.startsWith('sent') &&
+                        !trimmed.startsWith('receiving') &&
+                        !trimmed.match(/^\d+\s+\d+%/) &&
+                        trimmed.length > 3 &&
+                        !trimmed.includes('speedup')) {
+
+                        // This is likely a filename
+                        currentFile = trimmed;
+                        fileCount++;
+
+                        // Update UI every 20 files to avoid too many updates
+                        if (fileCount % 20 === 0) {
+                            progressText.textContent = `📁 Copying: ${fileCount} files...`;
+                            document.getElementById('fileCountText').textContent = `Files copied: ${fileCount}`;
+
+                            // Estimate progress based on file count (Windows ISO typically has ~4000-5000 files)
+                            const estimatedProgress = Math.min(85, 30 + (fileCount / 50));
+                            progressBar.style.width = `${estimatedProgress}%`;
+                        }
+                    }
+
+                    // Check for progress percentage (format: bytes transferred  percentage)
+                    const progressMatch = trimmed.match(/(\d+)\s+(\d+)%/);
+                    if (progressMatch) {
+                        const percent = parseInt(progressMatch[2]);
+                        const adjustedPercent = 30 + (percent * 0.6); // Scale from 30% to 90%
+                        progressBar.style.width = `${adjustedPercent}%`;
+                    }
+
+                    // Check for transfer rate
+                    const rateMatch = trimmed.match(/(\d+\.?\d*[KMG]B\/s)/);
+                    if (rateMatch) {
+                        document.getElementById('transferSpeed').textContent = `Speed: ${rateMatch[1]}`;
+                    }
+                }
             });
 
             rsyncProcess.stderr.on('data', (data) => {
@@ -397,7 +487,17 @@ async function makeBootable() {
             });
 
             rsyncProcess.on('close', (code) => {
+                clearInterval(spaceMonitor); // Stop monitoring
+
+                // Hide monitors after completion
+                setTimeout(() => {
+                    document.getElementById('usbSpaceMonitor').classList.add('hidden');
+                    document.getElementById('fileCopyInfo').classList.add('hidden');
+                }, 3000);
+
                 if (code === 0) {
+                    progressText.textContent = `✅ Copied ${fileCount} files successfully!`;
+                    document.getElementById('fileCountText').textContent = `✅ Total files copied: ${fileCount}`;
                     resolve();
                 } else {
                     reject(new Error(`rsync failed with code ${code}: ${errorOutput}`));

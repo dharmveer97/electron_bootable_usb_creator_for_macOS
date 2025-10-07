@@ -106,6 +106,35 @@
                     <div id="progressBar" class="bg-indigo-600 h-full transition-all duration-300" style="width: 0%"></div>
                 </div>
                 <p id="progressText" class="text-sm text-gray-600 mt-2 text-center"></p>
+
+                <!-- USB Space Monitor -->
+                <div id="usbSpaceMonitor" class="hidden mt-4 bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-blue-900">💾 USB Drive Space:</span>
+                        <span id="usbSpaceText" class="text-sm font-bold text-blue-700">Checking...</span>
+                    </div>
+                    <div class="bg-gray-200 rounded-full h-6 overflow-hidden">
+                        <div id="usbSpaceBar" class="bg-gradient-to-r from-green-500 to-blue-500 h-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between mt-1">
+                        <span id="usbUsedSpace" class="text-xs text-gray-600">Used: 0 GB</span>
+                        <span id="usbTotalSpace" class="text-xs text-gray-600">Total: 0 GB</span>
+                    </div>
+                </div>
+
+                <!-- File Copy Info -->
+                <div id="fileCopyInfo" class="hidden mt-3 bg-green-50 border border-green-300 rounded-lg p-3">
+                    <div class="flex items-center">
+                        <svg class="animate-spin h-5 w-5 mr-3 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <div class="flex-1">
+                            <p id="fileCountText" class="text-sm font-semibold text-green-900">Files copied: 0</p>
+                            <p id="transferSpeed" class="text-xs text-green-700">Speed: Calculating...</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Action Buttons -->
