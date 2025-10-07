@@ -374,6 +374,9 @@ async function makeBootable() {
         const sourcePath = mountPoint.replace(/\/$/, '');
         const targetPath = destPath.replace(/\/$/, '');
 
+        // Get copy method preference
+        const copyMethod = document.querySelector('input[name="copymethod"]:checked').value;
+
         // Use spawn for better progress handling
         const { spawn } = require('child_process');
 
@@ -418,12 +421,39 @@ async function makeBootable() {
         }, 2000); // Update every 2 seconds
 
         await new Promise((resolve, reject) => {
-            const rsyncProcess = spawn('rsync', [
-                '-avh',
-                '--progress',
-                `${sourcePath}/`,
-                `${targetPath}/`
-            ]);
+            let copyProcess;
+
+            if (copyMethod === 'cp') {
+                // Use cp -R for FASTEST copying (native macOS, no overhead)
+                // This is significantly faster than rsync for local copying
+                progressText.textContent = '📁 Fast copying mode - Maximum speed!';
+                document.getElementById('transferSpeed').textContent = 'Using native cp (fastest)';
+
+                copyProcess = spawn('cp', [
+                    '-Rv',  // -R: recursive, -v: verbose
+                    `${sourcePath}/.`,  // Copy contents
+                    targetPath
+                ]);
+            } else {
+                // Optimized rsync with faster options:
+                // -a: archive mode
+                // -h: human-readable sizes
+                // --progress: show progress
+                // --inplace: update files in-place (faster, no temp files)
+                // --no-compress: don't compress (USB is local, compression slows down)
+                // --whole-file: copy whole files (faster for local transfers)
+                copyProcess = spawn('rsync', [
+                    '-ah',
+                    '--progress',
+                    '--inplace',
+                    '--no-compress',
+                    '--whole-file',
+                    `${sourcePath}/`,
+                    `${targetPath}/`
+                ]);
+            }
+
+            const rsyncProcess = copyProcess;  // Keep variable name for compatibility
 
             let errorOutput = '';
             let lastFile = '';
@@ -435,48 +465,66 @@ async function makeBootable() {
                 const output = data.toString();
                 console.log(output);
 
-                // Extract current file being copied (lines that don't start with special chars)
-                const lines = output.split('\n');
-                for (const line of lines) {
-                    const trimmed = line.trim();
+                if (copyMethod === 'cp') {
+                    // cp outputs filename per line with verbose mode
+                    const lines = output.split('\n');
+                    for (const line of lines) {
+                        if (line.trim().length > 0) {
+                            fileCount++;
 
-                    // Check for file transfer lines (they start with the filename)
-                    if (trimmed &&
-                        !trimmed.startsWith('sending') &&
-                        !trimmed.startsWith('total size') &&
-                        !trimmed.startsWith('sent') &&
-                        !trimmed.startsWith('receiving') &&
-                        !trimmed.match(/^\d+\s+\d+%/) &&
-                        trimmed.length > 3 &&
-                        !trimmed.includes('speedup')) {
+                            // Update UI every 30 files
+                            if (fileCount % 30 === 0) {
+                                progressText.textContent = `📁 Fast copying: ${fileCount} files...`;
+                                document.getElementById('fileCountText').textContent = `Files copied: ${fileCount}`;
 
-                        // This is likely a filename
-                        currentFile = trimmed;
-                        fileCount++;
-
-                        // Update UI every 20 files to avoid too many updates
-                        if (fileCount % 20 === 0) {
-                            progressText.textContent = `📁 Copying: ${fileCount} files...`;
-                            document.getElementById('fileCountText').textContent = `Files copied: ${fileCount}`;
-
-                            // Estimate progress based on file count (Windows ISO typically has ~4000-5000 files)
-                            const estimatedProgress = Math.min(85, 30 + (fileCount / 50));
-                            progressBar.style.width = `${estimatedProgress}%`;
+                                // Estimate progress (Windows ISO ~4000 files)
+                                const estimatedProgress = Math.min(85, 30 + (fileCount / 45));
+                                progressBar.style.width = `${estimatedProgress}%`;
+                            }
                         }
                     }
+                } else {
+                    // rsync progress parsing
+                    const lines = output.split('\n');
+                    for (const line of lines) {
+                        const trimmed = line.trim();
 
-                    // Check for progress percentage (format: bytes transferred  percentage)
-                    const progressMatch = trimmed.match(/(\d+)\s+(\d+)%/);
-                    if (progressMatch) {
-                        const percent = parseInt(progressMatch[2]);
-                        const adjustedPercent = 30 + (percent * 0.6); // Scale from 30% to 90%
-                        progressBar.style.width = `${adjustedPercent}%`;
-                    }
+                        // Check for file transfer lines
+                        if (trimmed &&
+                            !trimmed.startsWith('sending') &&
+                            !trimmed.startsWith('total size') &&
+                            !trimmed.startsWith('sent') &&
+                            !trimmed.startsWith('receiving') &&
+                            !trimmed.match(/^\d+\s+\d+%/) &&
+                            trimmed.length > 3 &&
+                            !trimmed.includes('speedup')) {
 
-                    // Check for transfer rate
-                    const rateMatch = trimmed.match(/(\d+\.?\d*[KMG]B\/s)/);
-                    if (rateMatch) {
-                        document.getElementById('transferSpeed').textContent = `Speed: ${rateMatch[1]}`;
+                            currentFile = trimmed;
+                            fileCount++;
+
+                            // Update UI every 20 files
+                            if (fileCount % 20 === 0) {
+                                progressText.textContent = `📁 Copying: ${fileCount} files...`;
+                                document.getElementById('fileCountText').textContent = `Files copied: ${fileCount}`;
+
+                                const estimatedProgress = Math.min(85, 30 + (fileCount / 50));
+                                progressBar.style.width = `${estimatedProgress}%`;
+                            }
+                        }
+
+                        // Check for progress percentage
+                        const progressMatch = trimmed.match(/(\d+)\s+(\d+)%/);
+                        if (progressMatch) {
+                            const percent = parseInt(progressMatch[2]);
+                            const adjustedPercent = 30 + (percent * 0.6);
+                            progressBar.style.width = `${adjustedPercent}%`;
+                        }
+
+                        // Check for transfer rate
+                        const rateMatch = trimmed.match(/(\d+\.?\d*[KMG]B\/s)/);
+                        if (rateMatch) {
+                            document.getElementById('transferSpeed').textContent = `Speed: ${rateMatch[1]}`;
+                        }
                     }
                 }
             });

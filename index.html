@@ -64,6 +64,27 @@
                 </div>
             </div>
 
+            <!-- Copy Method -->
+            <div class="bg-gray-50 rounded-lg p-6">
+                <label class="block text-sm font-semibold text-gray-700 mb-3">Copy Method</label>
+                <div class="grid grid-cols-2 gap-4">
+                    <label class="flex items-center p-4 border-2 border-green-500 bg-green-50 rounded-lg cursor-pointer hover:border-green-600 transition">
+                        <input type="radio" name="copymethod" value="cp" checked class="mr-3 h-5 w-5 text-indigo-600">
+                        <div>
+                            <div class="font-semibold text-gray-800">Fast Copy (cp)</div>
+                            <div class="text-xs text-green-600 font-bold">✓ FASTEST</div>
+                        </div>
+                    </label>
+                    <label class="flex items-center p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-indigo-500 transition">
+                        <input type="radio" name="copymethod" value="rsync" class="mr-3 h-5 w-5 text-indigo-600">
+                        <div>
+                            <div class="font-semibold text-gray-800">rsync</div>
+                            <div class="text-xs text-gray-500">More progress info</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
             <!-- File System Options -->
             <div class="bg-gray-50 rounded-lg p-6">
                 <label class="block text-sm font-semibold text-gray-700 mb-3">File System</label>
