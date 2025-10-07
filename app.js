@@ -206,12 +206,32 @@ async function formatUSB() {
         });
 
         progressBar.style.width = '100%';
-        progressText.textContent = 'Format complete!';
+        progressText.textContent = '✅ Format complete!';
 
         setTimeout(() => {
-            alert('✅ USB formatted successfully!\n\nNow click "2. Make Bootable" to copy Windows files.');
+            const formatSuccessMessage = `
+╔═══════════════════════════════════════╗
+║      ✅ USB FORMATTED SUCCESSFULLY!      ║
+╚═══════════════════════════════════════╝
+
+Format Details:
+📦 File System: ${filesystem.toUpperCase()}
+🔧 Partition: ${partition.toUpperCase()}
+💾 Volume Name: WINDOWS
+
+📋 Next Step:
+Click "2. Make Bootable" button to copy Windows files to USB
+
+✅ Format completed successfully!
+            `.trim();
+
+            alert(formatSuccessMessage);
             progressContainer.classList.add('hidden');
-        }, 1000);
+
+            // Update progress text
+            progressText.textContent = '✅ Format done! Click "Make Bootable" next.';
+            progressText.classList.add('text-green-600', 'font-bold');
+        }, 1500);
 
     } catch (error) {
         progressContainer.classList.add('hidden');
@@ -293,22 +313,51 @@ async function makeBootable() {
         progressText.textContent = 'Finding USB mount point...';
         progressBar.style.width = '15%';
 
-        let destPath = '/Volumes/WINDOWS';
-        const mountCheck = await execAsync(`diskutil info ${dataPartition}`);
-        if (mountCheck.stdout.includes('Mounted:               Yes')) {
-            const mountMatch = mountCheck.stdout.match(/Mount Point:\s+(.+)/);
-            if (mountMatch) {
-                destPath = mountMatch[1].trim();
+        let destPath = null;
+
+        // Try to get mount point from partition
+        try {
+            const mountCheck = await execAsync(`diskutil info ${dataPartition}`);
+
+            if (mountCheck.stdout.includes('Mounted:               Yes') ||
+                mountCheck.stdout.includes('Mounted: Yes')) {
+                const mountMatch = mountCheck.stdout.match(/Mount Point:\s+(.+)/);
+                if (mountMatch && mountMatch[1].trim() !== '') {
+                    destPath = mountMatch[1].trim();
+                }
             }
-        } else {
-            await execAsync(`diskutil mount ${dataPartition}`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            const remountCheck = await execAsync(`diskutil info ${dataPartition}`);
-            const mountMatch = remountCheck.stdout.match(/Mount Point:\s+(.+)/);
-            if (mountMatch) {
-                destPath = mountMatch[1].trim();
+        } catch (e) {
+            console.error('Error checking mount status:', e);
+        }
+
+        // If not mounted, try to mount it
+        if (!destPath) {
+            try {
+                await execAsync(`diskutil mount ${dataPartition}`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                const remountCheck = await execAsync(`diskutil info ${dataPartition}`);
+                const mountMatch = remountCheck.stdout.match(/Mount Point:\s+(.+)/);
+                if (mountMatch && mountMatch[1].trim() !== '') {
+                    destPath = mountMatch[1].trim();
+                }
+            } catch (mountError) {
+                throw new Error(`Failed to mount USB partition: ${mountError.message}`);
             }
         }
+
+        // Validate mount path
+        if (!destPath || destPath === '') {
+            throw new Error('Could not find USB mount point. Please try formatting the USB first.');
+        }
+
+        // Verify the path exists
+        const fs = require('fs');
+        if (!fs.existsSync(destPath)) {
+            throw new Error(`USB mount point does not exist: ${destPath}`);
+        }
+
+        console.log(`Using USB mount point: ${destPath}`);
 
         // Mount ISO
         progressText.textContent = 'Mounting Windows ISO...';
@@ -321,8 +370,39 @@ async function makeBootable() {
         progressText.textContent = 'Copying Windows files (5-10 minutes)...';
         progressBar.style.width = '30%';
 
-        await execAsync(`rsync -av --progress "${mountPoint}/" "${destPath}/"`, {
-            timeout: 600000
+        // Ensure paths don't have trailing slashes and are properly escaped
+        const sourcePath = mountPoint.replace(/\/$/, '');
+        const targetPath = destPath.replace(/\/$/, '');
+
+        // Use spawn for better progress handling
+        const { spawn } = require('child_process');
+
+        await new Promise((resolve, reject) => {
+            const rsyncProcess = spawn('rsync', [
+                '-av',
+                '--progress',
+                `${sourcePath}/`,
+                `${targetPath}/`
+            ]);
+
+            let errorOutput = '';
+
+            rsyncProcess.stdout.on('data', (data) => {
+                console.log(data.toString());
+            });
+
+            rsyncProcess.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+                console.error(data.toString());
+            });
+
+            rsyncProcess.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`rsync failed with code ${code}: ${errorOutput}`));
+                }
+            });
         });
 
         progressBar.style.width = '90%';
@@ -332,12 +412,32 @@ async function makeBootable() {
         await execAsync(`hdiutil unmount "${mountPoint}"`);
 
         progressBar.style.width = '100%';
-        progressText.textContent = 'Complete!';
+        progressText.textContent = '✅ Bootable USB created successfully!';
 
         setTimeout(() => {
-            alert('✅ Bootable USB created successfully!\n\nYou can now boot your Dell laptop from this USB drive!');
+            const successMessage = `
+╔═══════════════════════════════════════╗
+║   ✅ BOOTABLE USB CREATED SUCCESSFULLY!   ║
+╚═══════════════════════════════════════╝
+
+Your bootable Windows USB is ready!
+
+📋 What's next:
+1. Safely eject the USB drive
+2. Insert it into your Dell laptop
+3. Boot from USB (press F12 during startup)
+4. Follow Windows installation wizard
+
+✅ USB is now bootable and ready to use!
+            `.trim();
+
+            alert(successMessage);
             progressContainer.classList.add('hidden');
-        }, 1000);
+
+            // Also update the progress text to show success
+            progressText.textContent = '✅ Done! You can now safely eject the USB.';
+            progressText.classList.add('text-green-600', 'font-bold');
+        }, 1500);
 
     } catch (error) {
         progressContainer.classList.add('hidden');
